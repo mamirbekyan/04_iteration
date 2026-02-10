@@ -52,9 +52,10 @@ We have a total of:
 
 Here is where we load the packages we will use.
 
-```{r setup}
-#| message: false
-#| warning: false
+```{r setup, message=TRUE, warning=FALSE}
+#| message: false 
+#| warning: false #there are two ways of doing the same thing
+#if you have many things to edit,easier to do here than in the top line
 
 
 # Loading packages
@@ -66,8 +67,8 @@ library(knitr) # for figure displaying
 Reading data.  
 ```{r}
 #| message: false
-
-nematode
+#hit tab after ../ to open options
+nematode <- read_csv("../Data/03_nematode_rs.csv")
 
 nematode
 ```
@@ -78,7 +79,11 @@ summary(nematode)
 ```
 
 ```{r density plot} 
-nematode 
+nematode %>%
+  pivot_longer(cols = mel_s:re) %>% #pivot from mels to re, and name a name and value column
+  ggplot(aes(x = value)) +
+  geom_density() +
+  facet_wrap(~name, scales = "free") #facet wrap separating by name. Scales allows the axis to be flexible, free means both x and y
 
 ```
 
@@ -93,13 +98,16 @@ where **nir** is reflectance from the near-infrared band, and **vis** is reflect
 One example of creating ndvi for the nir and red bands would be:  
 
 ```{r}
-nematode
+nematode %>%
+  mutate(rndvi = (nir-r)/(nir+r))
 ```
 
 Since we're going to calculate this for each of the visible-region bands (5 in total), **let's write a function so we avoid some code repetition**.  
 
 ```{r ndvi function}
-ndvi 
+ndvi <- function (nir, vis) {
+  (nir-vis)/(nir+vis)
+}
 
 ```
 
@@ -113,25 +121,29 @@ The function **returns** a vector with the result of the ndvi calculation using 
 Let's see how that would compare to the previous step:  
 
 ```{r}
-nematode 
+nematode %>%
+  mutate(rndvi = ndvi(nir,r)) #this is how you assign the variables, with a comma. rndvi is the column name, and the contents of the content equals the output of that function, the inputs for which are listed afterwards
 
 ```
 
 Now that we created a function to help with one type of vegetation index, let's go ahead and compute all 10 different ones.  
 
 ```{r}
-nematode_w <- nematode 
+nematode_w <- nematode %>%
   # Calculating ndvi-based indices
-  
-
+  mutate(rndvi = ndvi(nir,r),
+         gndvi = ndvi(nir,g),
+         bndvi = ndvi(nir,b),
+         rendvi = ndvi(nir,re)
+         ) %>%
   # Calculating other non-ndvi-based indices
   # For reference, see paper.
-  #mutate(sr = nir/r,
-  #       rdvi = ((nir-r)/(nir+r))^2,
-  #       savi = (((1+0.5)*(nir-r))/(nir+r+0.16)),
-  #       vari = (g-r)/(g+r-b),
-  #       evi = 2.5*(nir-r)/(nir+(6*r)-(7.5*b))+1,
-  #       nli=  ((nir^2)-r)/((nir^2)+r))
+  mutate(sr = nir/r,
+         rdvi = ((nir-r)/(nir+r))^2,
+         savi = (((1+0.5)*(nir-r))/(nir+r+0.16)),
+         vari = (g-r)/(g+r-b),
+         evi = 2.5*(nir-r)/(nir+(6*r)-(7.5*b))+1,
+         nli=  ((nir^2)-r)/((nir^2)+r))
 
 nematode_w 
 ```
@@ -143,16 +155,19 @@ Let's write a function to return to us the mean and coefficient of variation. If
 
 First, a function for CV.  
 ```{r}
-meancv 
+meancv <- function(x) { 
   # Calculate intermediary steps of mean and sd
-
+mean <- mean (x, na.rm = T)
+sd <- sd(x, na.rm=T)
   # Calculate cv
-
+cv <- (sd/mean)*100
   # Combine them into a data frame
-
+df <- data.frame(mean = mean,#first mean is the column name, second mean is the value from the object created previously
+                 cv = cv
+                 ) 
   # Return the data frame
-  
-  
+return(df)  #so that the output is the dataframe
+}  
 
 
 meancv
@@ -160,13 +175,15 @@ meancv
 
 Let's apply it to one of the vegetation indices  
 ```{r}
-
+meancv(nematode_w$rndvi) #to get the data.frame but only the one column out of it
 ```
 
 # 5) Loops  
 Different types of loops exist, with `for` and `while` loops being the most popular.  
 
 A `for` loop iterates through positions in a vector and apply the same task to each position, returning a result for each of them.  
+
+A `while` loop will operate under a condition.
 
 Now, let's say I wanted to calculate the mean and CV for each of the response and explanatory variable columns in our data set.  
 
@@ -187,7 +204,10 @@ Let's create a for loop to do that for us.
 First, let's create an empty data frame scaffold to be populated by the results of the loop.  
 
 ```{r}
-nematode_meancv 
+nematode_meancv <- data.frame(variable = rep(NA,26),
+                              mean = rep(NA,26),
+                              cv = rep(NA,26)
+                              )
 
 nematode_meancv
 ```
@@ -195,17 +215,20 @@ nematode_meancv
 Each row above will be populated with the name of the variable, its mean and cv.  
 
 ```{r}
-
+for (i in 3:ncol(nematode_w)) { #i is a convention, do the loop from column 3 to however many columns there are in nematode_w. We dont want to calculate mean and cv of the first two. Lets say position 10 (column 10 of nematode_w) was not numerical, we can recreate an object with only numerical columns - i.e. function in dplyr maybe "across" which you can make it only keep columns that are numerical.
   # Getting the name of all columns
-
+  colnames <- colnames(nematode_w)
   # Defining the name of the variable being analyzed in a given loop step
-
+varname <- colnames[i] #call this index
   # Calculating mean and cv
-
+statsum <- meancv(nematode_w[[i]]) #double brackets turns the tibble/data.frame into a vector
   # Appending results to the empty data frame  
-
+nematode_meancv$variable[[i-2]] <- varname
+nematode_meancv$mean[[i-2]] <- statsum$mean
+nematode_meancv$cv[[i-2]] <- statsum$cv
   # Print a message
-
+print(paste("Finished with variable", varname))
+}
 ```
 
 Let's inspect `nematode_meancv`  
