@@ -256,25 +256,42 @@ This approach creates a bit of a brain-twist, since we are creating data sets (a
 
 
 ```{r}
-nematode_mods 
+nematode_mods <- nematode_w %>%
   # Pivotting longer for the response variables
-
-  # Pivotting longer for the explanatory variables  
-
+  pivot_longer(cols = mel_s:eggs_r,
+               names_to = "resp_var",
+               values_to = "resp_val"
+               ) %>%
+  # Pivotting longer for the explanatory variables 
+  pivot_longer(cols = b:nli,
+               names_to = "exp_var",
+               values_to = "exp_val") %>%
+  arrange(resp_var, exp_var) %>%
   # Creating groups of resp_var and exp_var
-
+  group_by(resp_var, exp_var) %>%
+  nest()%>% #all of the observations that had eggs_r and b, for example, are within a single dataframe. There are dataframes within the dataframe. If you wanted to label the column by number, you can mutate and add a column with values 1:150 to know which row to call if youre interested in a particular tibble.
+  mutate(lm = map(data, #this is the column "data" in the main dataset that you want to iterate over (the tibble). lm will be the name of the column
+        ~lm(resp_val ~ exp_val, # we want to make a linear model for the resp nand exp values from the data within the tibble
+            data = .x #the lm function is expecting a data function (here, data is an argument), and .x is the convention that the map function recognizes as the original "data" column name. There's nothing else you could have written here, its just a convention of the function to rewrite it. It IS redundant.
+            )
+  ))  %>%     
   # Applying linear model to each element
-
+  mutate(r2 = map(lm, #the iterating column is lm. if we write map_dbl we get the actual value. Otherwise we get a nested number, which we can also just pull out using summary(nematode_mods$lm[[1]])
+                  ~summary(.x)$r.squared
+                  ))
   # Extracting R2 for each element  
 
-
+nematode_mods$lm[1]
 ```
 Above we used the `map()` function because we only had one iterating element (i.e., data).  
 
 Now, let's unnest the r2 values, then only keep the largest r2 for each response variable, and make some plots.  
 
 ```{r}
-nematode_mods_sel 
+nematode_mods_sel <- nematode_mods %>%
+  unnest(r2) %>%
+  group_by(resp_var) %>% #want the best model for the response variable, and pull out only the best explanatory variable model by the top R2 for each response variable related to nematode variables. 
+  slice_max(r2)
 
 
 nematode_mods_sel
@@ -282,12 +299,39 @@ nematode_mods_sel
 
 
 ```{r}
-nematode_mods_sel_plots 
+nematode_mods_sel_plots <- nematode_mods_sel %>%
   # Making scatterplots with r2 in subtitle
+  mutate(splot = map2(data, r2,
+                      ~ggplot(data = .x, #the first one, data
+                              aes(x = exp_val,
+                                  y = resp_val)
+                              ) +
+                        geom_point() +
+                        geom_smooth(method = "lm") +
+                        labs(subtitle = paste("R2:", round(.y, 3)))
+                      )) %>%
 
   # Making scatterplots with r2 in subtitle, and correct x and y axis titles  
+  mutate(splot_better = pmap(list(.df = data,
+                                  .r2 = r2,
+                                  .rv = resp_var,
+                                  .ev = exp_var),
+                             function(.df, .r2, .rv, .ev)
+                               ggplot(data = .df,
+                                      aes(x = exp_val, 
+                                          y = resp_val)
+                                      ) +
+                               geom_point()+
+                               geom_smooth(method = "lm") +
+                               labs(subtitle = paste("R2:", 
+                                                     round(.r2, 3)),
+                                    x = .ev,
+                                    y = .rv)
+                              
+                                  
+                                  ))
 
-
+nematode_mods_sel_plots$splot_better[1]
 ```
 Now, we had 2 iterating elements to create `splot`, so we needed to use `map2()`.  
 
@@ -295,7 +339,7 @@ Also, with more than 2 iterating elements to create `splot_better`, we used the 
 
 Let's print the first plot:
 ```{r}
-
+nematode_mods_sel_plots$splot_better
 ```
 
 Now, let's print all of the plots  
@@ -303,18 +347,21 @@ Now, let's print all of the plots
 #| warning: false
 #| message: false
 
-
+library(gridExtra)
 ```
 
 Finally, let's save all these plots as one figure.  
 ```{r}
 library(gridExtra)
 
-allplots 
+allplots <- marrangeGrob(nematode_mods_sel_plots$splot_better,
+                         ncol = 4, nrow = 4)
 
 allplots
 
-
+ggsave(plot = allplots,
+       "../Output/allplots.png"
+       )
 ```
 
 
