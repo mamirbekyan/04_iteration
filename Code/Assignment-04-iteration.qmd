@@ -95,7 +95,7 @@ but not SORT alphabetically as it does for characters (which ended up being 0,10
 So we write "factor" before the x-axis column name. 
 However, because ggplot is very literal, it doesnt see factor() as a "function" 
 but makes it the automatic x-axis label. So we should also define axis labels. 
-We dont need to use factor() for x axis because it is continuous data.
+We dont need to use factor() for x axis because it is continuous data. 
 
 **Creating the Function and Making sure it works**
 ```{r}
